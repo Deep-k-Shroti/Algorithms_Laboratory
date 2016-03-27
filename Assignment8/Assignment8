@@ -1,0 +1,738 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <limits.h>
+
+
+typedef struct pointTag{
+	double pointX,pointY;
+} pointType;
+
+
+typedef struct pathTag{
+	pointType p;
+	struct pathTag* next;
+} pathType;
+
+
+typedef struct linkedListTag{
+	int* flag_p;
+	struct linkedListTag* next;
+	struct linkedListTag* end;
+} flagListType;
+
+
+
+typedef struct ballObjectTag{
+	struct physicalStateTag* currentState;
+	flagListType* allEventFlags;
+	pathType* path;
+	double lastTS;
+} ballObjectType, *ballObjectPtr;
+
+
+
+typedef struct physicalStateTag{
+	ballObjectPtr object;
+	double pointX,pointY,velocityX,velocityY,radius;
+	int color;
+} physicalStateType, *physicalStatePtr;
+
+
+
+//WallFlags
+//1...Up
+//2...Right
+//3...Down
+//4...Left
+typedef struct headNodeTag{
+	double timeStamp; //Key for heap entries
+	int* isValid;
+	ballObjectPtr ballObject1;
+	ballObjectPtr ballObject2;
+	int wallFlag;
+} heapNodeType;
+
+typedef struct heapTag{
+	heapNodeType* nodes;
+	int length;
+	int heapSize;
+} heapType, *heapPtr;
+
+
+typedef struct rectangleTag{
+	double left,right,up,down;
+} rectangleType;
+
+typedef struct worldTag{
+	ballObjectPtr* ballObjects;
+	int count;
+} worldType, *worldPtr;
+
+heapPtr createHeap();
+worldPtr createWorld();
+heapNodeType createHeapNode(double timeStamp, ballObjectPtr o1, ballObjectPtr o2);
+physicalStatePtr createState(ballObjectPtr o_p,double pointX,double pointY,double velocityX,double velocityY,int color,double radius);
+void insertWorld(worldPtr w,ballObjectPtr o);
+ballObjectPtr createObject();
+
+void setState(ballObjectPtr obj,physicalStatePtr s);
+void updatePath(ballObjectPtr obj,double pointX,double pointY);
+void plotPath(ballObjectPtr obj);
+void buildMinHeap(heapPtr h);
+void minHeapify(heapPtr h, int index);
+void swapNode(heapPtr h,int this,int that);
+void minHeapInsert(heapPtr h,heapNodeType node);
+heapNodeType findHeapMin(heapPtr h);
+heapNodeType extractHeapMin(heapPtr h);
+void heapDecreaseKey(heapPtr h, int index, heapNodeType node);
+// void heapSort(heapPtr h);
+void printHeap(heapPtr h);
+void switchState(ballObjectPtr obj,physicalStatePtr state);
+
+double findCollisionTime(ballObjectPtr ballObject1,ballObjectPtr ballObject2,heapPtr collisions);
+double quadraticEquation(double a,double b,double c);
+void simulateCollision(heapNodeType h);
+void addFlag(ballObjectPtr obj,heapNodeType n);
+void removeFutureEvents(ballObjectPtr obj);
+double findWallCollisions(ballObjectPtr obj,heapPtr collisions, rectangleType wall);
+void printState(ballObjectPtr obj,char* message);
+pointType getCurrentPosition(ballObjectPtr obj,double t);
+
+
+FILE* gnuplotpipe;
+FILE* tempFilePtr;
+FILE* matFilePtr;
+FILE* logFilePtr;
+char* commandForGnuplot[] = {
+	"set style line 1 lc rgb '#0000ff' lt 1 lw 2 pt 7 ps 1.5   # --- blue",
+	"set style line 2 lc rgb '#ff0000' lt 1 lw 2 pt 7 ps 1.5   # --- red",
+	"set style line 3 lc rgb '#00ff00' lt 1 lw 2 pt 7 ps 1.5   # --- green",
+	"set style line 4 lc rgb '#ffff00' lt 1 lw 2 pt 7 ps 1.5   # --- yellow",
+	"set style line 5 lc rgb '#000000' lt 1 lw 4 pt 7 ps 1.5   # --- black",
+	"plot 'data.temp' index 0 with linespoints ls 1 notitle,''          index 1 with linespoints ls 2 notitle,''          index 2 with linespoints ls 3 notitle,''          index 3 with linespoints ls 4 notitle,''          index 4 with linespoints ls 5 notitle","set title \"pathType Plot\""
+};
+int numCommand = 7;
+double curr_time =0 ;
+
+int main()
+{
+	double TIME_LIM;
+	rectangleType worldWall;
+
+	printf("Please enter the time horizon for simulation: \n");
+	scanf("%lf",&TIME_LIM);
+
+	heapPtr collisions = createHeap(10);
+
+	//Cresting a world wall at Up - 7, Left -7, Right 7 and Down -7
+	worldWall.up = 7;
+	worldWall.left = -7;
+	worldWall.right = 7;
+	worldWall.down = -7;
+
+	//Opening tempFilePtr, matFilePtr , gnuplotpipe and logFilePtr
+	tempFilePtr = fopen("data.temp","w");
+	matFilePtr = fopen("dataPoints.mat","w");
+	gnuplotpipe = popen("gnuplot -persistent","w");
+	logFilePtr = fopen("Log.txt","w");
+
+	int i,j;
+	//Simulation Code of Event Driven
+	int count = 3;
+
+
+	worldPtr world = createWorld();
+	ballObjectType *ballObject1 = createObject();
+	ballObjectType *ballObject2 = createObject();
+	ballObjectType *ballobject3 = createObject();
+	ballObjectType *ballObject4 = createObject();
+
+	// ballObject1->currentState = createState(ballObject1,20,0,-2,0,0,5);
+	// ballObject2->currentState = createState(ballObject2,-20,-2.5,5,0,0,2.5);
+
+	//
+	// ballObject1->currentState = createState(ballObject1,-1,-.5,4,1,0,0.5);
+	// ballObject2->currentState = createState(ballObject2,1,0,0,0,0,0.5);
+	// ballobject3->currentState = createState(ballobject3,-2,-1,2,5,0,0.5);
+	// ballObject4->currentState = createState(ballObject4,2,0,0.5,3.5,6,0.5);
+
+
+	ballObject1->currentState = createState(ballObject1,-3,0,4,1,0,0.2);
+	ballObject2->currentState = createState(ballObject2,1,5,0,0,0,0.2);
+	ballobject3->currentState = createState(ballobject3,-5,-6,2,5,0,0.2);
+	ballObject4->currentState = createState(ballObject4,2,-1,0.5,3.5,6,0.2);
+
+
+	insertWorld(world,ballObject1);
+	insertWorld(world,ballObject2);
+	insertWorld(world,ballobject3);
+	insertWorld(world,ballObject4);
+
+
+	for (i = 0; i < world->count; ++i){
+		ballObjectType *o1 = world->ballObjects[i];
+		for (j = i; j < world->count; ++j){
+			ballObjectType *o2 = world->ballObjects[j];
+			double t = findCollisionTime(o1,o2,collisions);
+			//printf("Time of collition between %d and %d: %f\n", i,j,t);
+		}
+		findWallCollisions(o1,collisions,worldWall);
+	}
+
+	while(collisions->heapSize>0 && curr_time<TIME_LIM){
+		heapNodeType c = extractHeapMin(collisions);
+		if(*c.isValid!=1)
+			continue;
+		curr_time = c.timeStamp;
+
+		simulateCollision(c);
+		ballObjectType *o1 = c.ballObject1;
+		for (i = 0; i < world->count; ++i){
+			ballObjectType *o2 = world->ballObjects[i];
+			double t = findCollisionTime(o1,o2,collisions);
+			// printf("Time of collision  between %d and %d: %f\n", i,j,t);
+
+		}
+		findWallCollisions(c.ballObject1,collisions,worldWall);
+		o1 = c.ballObject2;
+		if(o1 != NULL){
+			for (i = 0; i < world->count; ++i){
+				ballObjectType *o2 = world->ballObjects[i];
+				double t = findCollisionTime(o1,o2,collisions);
+				// printf("Time of coliision between %d and %d: %f\n", i,j,t);
+			}
+			findWallCollisions(c.ballObject2,collisions,worldWall);
+		}
+		//printHeap(collisions);
+	}
+	//printf("Exiting: size: %d time: %lf\n", collisions->heapSize,curr_time);
+	//extractHeapMin(collisions);
+
+	char arrName[10];
+	for (i = 0; i < world->count; ++i){
+		sprintf(arrName,"ball%d",i);
+		ballObjectType *o1 = world->ballObjects[i];
+		pathType* path = o1->path;
+		fprintf(matFilePtr, "%s=[\n", arrName);
+
+		while(path != NULL){
+			fprintf(tempFilePtr, "%lf %lf \n",path->p.pointX,path->p.pointY);
+			fprintf(matFilePtr, "%lf %lf \n",path->p.pointX,path->p.pointY);
+			// printf("Col Loc[%d]: X: %lf, Y: %lf \n",i,path->p.pointX,path->p.pointY);
+
+			path = path->next;
+		}
+		fprintf(matFilePtr, "];hold on;\n");
+		fprintf(tempFilePtr, "\n\n");
+	}
+	fprintf(tempFilePtr, "7 7 \n7 -7\n-7 -7\n-7 7\n7 7\n");
+	for (i = 0; i < world->count; ++i){
+		sprintf(arrName,"ball%d",i);
+		fprintf(matFilePtr, "plot(%s(1,:),%s(2,:));\n",arrName,arrName);
+	}
+	fprintf(matFilePtr, "hold off;\n");
+
+	for (i = 0; i < numCommand; ++i){
+		fprintf(gnuplotpipe, "%s \n", commandForGnuplot[i]);
+	}
+	//printHeap(collisions);
+
+	fflush(gnuplotpipe);
+	//printf("Count of ballObjects in world: %d\n", world->count);
+	//findCollisionTime(world->ballObjects[0],world->ballObjects[1]);
+	fclose(tempFilePtr);
+	fclose(matFilePtr);
+	fclose(logFilePtr);
+	return 0;
+}
+
+int ParentNode(int i){
+	int parentIndex;
+	parentIndex = (int)floor((i-1)/2);
+return(parentIndex);
+}
+
+int LeftNode(int i){
+	int leftIndex;
+	leftIndex = 2*i+1;
+	return(leftIndex);
+}
+
+int RightNode(int i){
+	int rightIndex;
+	rightIndex = 2*i+2;
+	return(rightIndex);
+}
+
+heapPtr createHeap(int length){
+	heapPtr h = (heapPtr)malloc(sizeof(heapType));
+	h->nodes = (heapNodeType*)malloc(length*sizeof(heapNodeType));
+	h->length = length;
+	h->heapSize = 0;
+	return h;
+}
+
+heapNodeType createHeapNode(double timeStamp, ballObjectPtr o1, ballObjectPtr o2){
+	heapNodeType a ;//= (heapNodeType*)malloc(sizeof(heapNodeType));
+	//printf("Value to set %lf\n", timeStamp);
+	a.timeStamp = timeStamp;
+	a.ballObject1 = o1;
+	a.ballObject2 = o2;
+	a.isValid = (int*)malloc(sizeof(int));
+	*a.isValid = 1;
+	return a;
+}
+
+worldPtr createWorld(){
+	worldPtr w = (worldPtr)malloc(sizeof(worldType));
+	w->ballObjects = NULL;
+	w->count = 0;
+	return w;
+}
+
+ballObjectPtr createObject(){
+	ballObjectPtr obj = (ballObjectPtr)malloc(sizeof(ballObjectType));
+	obj->currentState = NULL;
+	obj->allEventFlags = NULL;
+	obj->lastTS = 0;
+	return obj;
+}
+
+physicalStatePtr createState(ballObjectPtr o_p,double pointX,double pointY,double velocityX,double velocityY,int color,double radius){
+	physicalStatePtr s;
+	s = (physicalStatePtr)malloc(sizeof(physicalStateType));
+	s->pointX = pointX;
+	s->pointY = pointY;
+	s->velocityX = velocityX;
+	s->velocityY = velocityY;
+	s->color = color;
+	s->radius = radius;
+	s->object = o_p;
+	updatePath(o_p,pointX,pointY);
+	return s;
+}
+
+void setState(ballObjectPtr obj,physicalStatePtr s){
+	if(s->object != obj)
+	{
+		return;
+	}
+	switchState(obj,s);
+}
+
+void updatePath(ballObjectPtr obj,double pointX,double pointY){
+	pathType* path = obj->path;
+	if(path == NULL){
+		path = (pathType*)malloc(sizeof(pathType));
+		path->p.pointX = pointX;
+		path->p.pointY = pointY;
+		path->next = NULL;
+		obj->path = path;
+		return;
+	}
+	while(path->next!=NULL)
+		path = path->next;
+	path->next = (pathType*)malloc(sizeof(pathType));
+	path = path->next;
+	path->p.pointX = pointX;
+	path->p.pointY = pointY;
+	path->next = NULL;
+	//obj->path = path;
+}
+
+void plotPath(ballObjectPtr obj){
+	pathType* path = obj->path;
+	while(path->next!=NULL){
+		printf("X: %lf, Y: %lf\n", path->p.pointX,path->p.pointY);
+		path = path->next;
+	}
+}
+
+void insertWorld(worldType* w,ballObjectPtr o){
+	w->count++;
+	if(w->count == 1){
+		w->ballObjects = (ballObjectPtr*)malloc(sizeof(ballObjectPtr));
+		w->ballObjects[w->count - 1] = o;
+	}
+	else{
+		w->ballObjects = (ballObjectPtr*)realloc(w->ballObjects,w->count*sizeof(ballObjectPtr));
+		w->ballObjects[w->count - 1] = o;
+	}
+}
+
+void buildMinHeap(heapPtr h){
+	int i;
+	for (i = ParentNode(h->length - 1); i >= 0; i--){
+		minHeapify(h,i);
+	}
+}
+
+void minHeapify(heapPtr h, int index){
+	int l = LeftNode(index);
+	int r = RightNode(index);
+	int min;
+	if(l<h->heapSize){
+		if(h->nodes[index].timeStamp > h->nodes[l].timeStamp)
+			min = l;
+		else
+			min = index;
+	}
+	else
+		min = index;
+	if(r<h->heapSize){
+		if(h->nodes[min].timeStamp > h->nodes[r].timeStamp)
+			min = r;
+	}
+
+	if(min != index){
+		swapNode(h,index,min);
+		minHeapify(h,min);
+	}
+}
+
+void swapNode(heapPtr h,int this,int that){
+	//printf("size: %d, this: %d, that: %d\n", h->heapSize,this,that);
+	heapNodeType a = h->nodes[this];
+
+	h->nodes[this] = h->nodes[that];
+	h->nodes[that] = a;
+}
+
+heapNodeType findHeapMin(heapPtr h){
+	return  h->nodes[0];
+}
+
+heapNodeType extractHeapMin(heapPtr h){
+	heapNodeType a = h->nodes[0];
+	h->nodes[0] = h->nodes[h->heapSize - 1];
+	h->heapSize--;
+	minHeapify(h, 0);
+	return a;
+}
+
+void heapDecreaseKey(heapPtr h, int index, heapNodeType node){
+
+	if(node.timeStamp > h->nodes[index].timeStamp)
+		return;
+	h->nodes[index] = node;
+	while(index > 0 && h->nodes[ParentNode(index)].timeStamp > h->nodes[index].timeStamp){
+		swapNode(h,index,ParentNode(index));
+		index = ParentNode(index);
+	}
+}
+
+void minHeapInsert(heapPtr h,heapNodeType node){
+
+	//printf("**Inserting %lf\n", node.timeStamp);
+	if(h->length > h->heapSize){
+		h->heapSize++;
+	}
+	else{
+		h->length*=2;
+		h->nodes = (heapNodeType*)realloc(h->nodes,h->length*sizeof(heapNodeType));
+		h->heapSize++;
+	}
+	h->nodes[h->heapSize-1].timeStamp = INFINITY;
+	heapDecreaseKey(h,h->heapSize - 1,node);
+}
+
+void printHeap(heapPtr h){
+	int i=0;
+	printf("Size of heapType: %d\n", h->heapSize);
+	printf("Length of Array: %d\n", h->length);
+	while(i<h->heapSize){
+		printf("KEY: %lf, Flag: %d\n",h->nodes[i].timeStamp,*h->nodes[i].isValid);
+		// printf("Left: %d\n ",h->nodes[LeftNode(i)].timeStamp);
+		// printf("Right: %d\n\n",h->nodes[RightNode(i)].timeStamp);
+		i++;
+	}
+}
+
+void switchState(ballObjectPtr obj,physicalStatePtr state){
+	free(obj->currentState);
+	obj->currentState = state;
+}
+
+void addFlag(ballObjectPtr obj,heapNodeType n){
+	flagListType* fl = obj->allEventFlags;
+	if(fl == NULL){
+		fl = (flagListType*)malloc(sizeof(flagListType));
+		fl->next = NULL;
+		fl->end = fl;
+		fl->flag_p = n.isValid;
+		obj->allEventFlags = fl;
+	}
+	else{
+		fl = fl->end;
+		fl->next = (flagListType*)malloc(sizeof(flagListType));
+		fl = fl->next;
+		fl->end = fl;
+		fl->next = NULL;
+		fl->flag_p = n.isValid;
+	}
+}
+
+pointType getCurrentPosition(ballObjectPtr obj,double t){
+	pointType p;
+	physicalStatePtr st = obj->currentState;
+	p.pointX = st->pointX + st->velocityX*(t - obj->lastTS);
+	p.pointY = st->pointY + st->velocityY*(t - obj->lastTS);
+	return p;
+}
+
+double findCollisionTime(ballObjectPtr ballObject1,ballObjectPtr ballObject2,heapPtr collisions){
+	if(ballObject1 == ballObject2)
+		return INFINITY;
+	double t = INFINITY;
+	physicalStatePtr st1 = ballObject1->currentState;
+	physicalStatePtr st2 = ballObject2->currentState;
+	double xrel,yrel;
+	pointType p1,p2;
+	p1 = getCurrentPosition(ballObject1,curr_time);
+	p2 = getCurrentPosition(ballObject2,curr_time);
+	xrel = p2.pointX - p1.pointX;
+	yrel = p2.pointY - p1.pointY;
+	double vy_rel = st2->velocityY - st1->velocityY;
+	double vx_rel = st2->velocityX - st1->velocityX;
+	double r1,r2;
+	r1 = st1->radius;
+	r2 = st2->radius;
+	double time_collide = quadraticEquation(vx_rel*vx_rel + vy_rel*vy_rel,
+		2*(vx_rel*xrel + vy_rel*yrel),xrel*xrel + yrel*yrel - (r1+r2)*(r1+r2));
+	//printf("Time to collide %f\n", time_collide);
+	if(time_collide != INFINITY && time_collide!=-INFINITY && time_collide > 0.000000001){
+		time_collide = curr_time + time_collide;
+		// printf("NHN Called from ball-ball collision.\n");
+		heapNodeType n = createHeapNode(time_collide,ballObject1,ballObject2);
+		addFlag(ballObject1,n);
+		addFlag(ballObject2,n);
+		//printf("Value to set %lf\n", n.timeStamp);
+		minHeapInsert(collisions,n);
+	}
+	return time_collide;
+}
+
+double quadraticEquation(double a,double b,double c){
+	double d = (b*b - 4*a*c);
+	if(d<0)
+		return INFINITY;
+	double s1,s2;
+	s1 = (-b+sqrt(d))/(2*a);
+	s2 = (-b-sqrt(d))/(2*a);
+	double minT = INFINITY;
+	if(s1>0)
+	{
+		minT = s1;
+	}
+	if(s2<minT && s2>0)
+	{
+		minT = s2;
+	}
+
+	return minT;
+}
+void simulateCollision(heapNodeType node){
+	fprintf(logFilePtr, "\n\nSimulating Collision \n" );
+	fprintf(logFilePtr,"Current Time: %lf\n", node.timeStamp);
+	if(*node.isValid != 1)
+	{
+		return;
+	}
+
+	double t = node.timeStamp;
+	double ux1,ux2,uy1,uy2,m;
+	double vx1,vx2,vy1,vy2;
+	double x1,x2,y1,y2;
+	physicalStatePtr st1 = node.ballObject1->currentState;
+
+	ux1 = st1->velocityX;
+	uy1 = st1->velocityY;
+	pointType p1;
+	p1 = getCurrentPosition(node.ballObject1,node.timeStamp);
+	x1 = p1.pointX;
+	y1 = p1.pointY;
+	if(node.ballObject2 == NULL){
+		t -= node.ballObject1->lastTS;
+		fprintf(logFilePtr,"It's an wall collision.\n");
+		int wallFlag = node.wallFlag;
+		fprintf(logFilePtr, "Before Collision :\n" );
+		printState(node.ballObject1,"Collider: \n");
+		if(wallFlag == 1 || wallFlag == 3){
+			//TOP OR BOTTOM
+			node.ballObject1->currentState = createState(node.ballObject1,x1,y1,ux1,-uy1,st1->color,st1->radius);
+
+			updatePath(node.ballObject1,x1,y1);
+			removeFutureEvents(node.ballObject1);
+			free(st1);
+		}
+		else{
+			//RIGHT OR LEFT
+			node.ballObject1->currentState = createState(node.ballObject1,x1,y1,-ux1,uy1,st1->color,st1->radius);
+
+			updatePath(node.ballObject1,x1,y1);
+			removeFutureEvents(node.ballObject1);
+			free(st1);
+		}
+		// printState(node.ballObject1,"Collider 1: \n");
+		node.ballObject1->lastTS = node.timeStamp;
+		fprintf(logFilePtr, "After Collision :\n" );
+		printState(node.ballObject1,"Collider: \n");
+		return;
+	}
+
+	fprintf(logFilePtr, "Before Collision:\n" );
+	printState(node.ballObject1,"Collider 1: \n");
+	printState(node.ballObject2,"Collider 2:\n");
+	physicalStatePtr st2 = node.ballObject2->currentState;
+	double xrel,yrel;
+	double t1,t2;
+	t1 = t - node.ballObject1->lastTS;
+	t2 = t - node.ballObject2->lastTS;
+	ux2 = st2->velocityX;
+	uy2 = st2->velocityY;
+	pointType p2;
+	p2 = getCurrentPosition(node.ballObject2,node.timeStamp);
+	x2 = p2.pointX;
+	y2 = p2.pointY;
+	xrel = x2 - x1;
+	yrel = y2 - y1;
+
+	m = yrel/xrel;
+
+	if(m == INFINITY || m==-INFINITY){
+		node.ballObject1->currentState = createState(node.ballObject1,x1,y1,ux1,uy2,st1->color,st1->radius);
+		node.ballObject2->currentState = createState(node.ballObject2,x2,y2,ux2,uy1,st2->color,st2->radius);
+		updatePath(node.ballObject1,x1,y1);
+		updatePath(node.ballObject2,x2,y2);
+		removeFutureEvents(node.ballObject1);
+		removeFutureEvents(node.ballObject2);
+		free(st1);
+		free(st2);
+	}
+	else{
+		//printState(node.ballObject1,"Collider 1: \n");
+		//printState(node.ballObject2,"Collider 2:\n");
+		double uy_rel = st2->velocityY - st1->velocityY;
+		double ux_rel = st2->velocityX - st1->velocityX;
+		double denom = (1+m*m);
+
+		vx1 = (m*m*ux1 + m*uy_rel + ux2)/denom;
+		vy1 = (m*m*uy2 + m*ux_rel + uy1)/denom;
+		vx2 = (m*m*ux2 - m*uy_rel + ux1)/denom;
+		vy2 = (m*m*uy1 - m*ux_rel + uy2)/denom;
+
+		node.ballObject1->currentState = createState(node.ballObject1,x1,y1,vx1,vy1,st1->color,st1->radius);
+		node.ballObject2->currentState = createState(node.ballObject2,x2,y2,vx2,vy2,st2->color,st2->radius);
+		updatePath(node.ballObject1,x1,y1);
+		updatePath(node.ballObject2,x2,y2);
+		removeFutureEvents(node.ballObject1);
+		removeFutureEvents(node.ballObject2);
+		free(st1);
+		free(st2);
+	}
+
+	node.ballObject1->lastTS = node.timeStamp;
+	node.ballObject2->lastTS = node.timeStamp;
+	fprintf(logFilePtr, "After Collision:\n" );
+	printState(node.ballObject1,"Collider 1: \n");
+	printState(node.ballObject2,"Collider 2:\n");
+	return;
+}
+
+void removeFutureEvents(ballObjectPtr obj){
+	flagListType* fl = obj->allEventFlags;
+	flagListType* temp;
+	obj->allEventFlags = NULL;
+	while(fl!=NULL){
+		*fl->flag_p = 0;
+		temp = fl;
+		fl=fl->next;
+		free(temp);
+	}
+}
+
+double findWallCollisions(ballObjectPtr obj,heapPtr collisions, rectangleType wall){
+	//printf("COMPUTING WALL COLLISION\n");
+	double time_collide = INFINITY;
+	int wf = 0;
+	pointType p;
+	p = getCurrentPosition(obj,curr_time);
+	physicalStatePtr st = obj->currentState;
+	double r,pointX,pointY,velocityX,velocityY;
+	velocityX = st->velocityX;
+	velocityY = st->velocityY;
+	pointX = p.pointX;
+	pointY = p.pointY;
+	r = st->radius;
+	double tl,tt,tr,tb;
+	double up,left,right,down;
+	up = wall.up;
+	right = wall.right;
+	left = wall.left;
+	down = wall.down;
+	if(velocityX>0 && velocityY>0){
+		//TOP OR RIGHT
+		tt = (up - pointY - r)/velocityY;
+		time_collide = tt;
+		wf = 1;
+		tr = (right - pointX - r)/velocityX;
+		if(tr<time_collide)	{
+			time_collide = tr;
+			wf=2;
+		}
+	}else if(velocityY>0){
+		//TOP OR LEFT
+		tt = (up - pointY - r)/velocityY;
+		time_collide = tt;
+		wf = 1;
+		tl = (left-pointX+r)/velocityX;
+		if(tl<time_collide){
+			time_collide = tl;
+			wf=4;
+		}
+	}else if(velocityX>0){
+		//BOTTOM OR RIGHT
+		tb = (down-pointY+r)/velocityY;
+		time_collide = tb;
+		wf = 3;
+
+		tr = (right - pointX -r)/velocityX;
+		if(tr<time_collide){
+			time_collide = tr;
+			wf = 2;
+		}
+	}else{
+		//BOTTOM OR LEFT
+		tb = (down-pointY+r)/velocityY;
+		time_collide = tb;
+		wf = 3;
+		tl = (left-pointX+r)/velocityX;
+		if(tl<time_collide)	{
+			time_collide = tl;
+			wf = 4;
+		}
+	}
+	time_collide += curr_time;
+	// printf("WALL COLLISION DELAY: %lf and WF: %d\n", time_collide, wf);
+	if(wf!=0 && curr_time<time_collide){
+		// printf("Value of time_collide %lf\n", time_collide);
+		// printf("NHN called from wall.\n");
+		heapNodeType n = createHeapNode(time_collide,obj,NULL);
+		addFlag(obj,n);
+		n.wallFlag = wf;
+		//printf("Value to set %lf\n", n.timeStamp);
+		minHeapInsert(collisions,n);
+	}
+	return time_collide;
+}
+
+void printState(ballObjectPtr obj,char* message){
+	if(obj == NULL)
+		return;
+	physicalStatePtr st = obj->currentState;
+	fprintf(logFilePtr,"%s", message);
+	fprintf(logFilePtr,"State: \n\t Position_X: %lf,\n\t Position_Y: %lf,\n\t Velocity_X: %lf,\n\t Velocity_Y: %lf\n",
+		st->pointX,st->pointY,st->velocityX,st->velocityY);
+	fprintf(logFilePtr,"\t Time Stamp: %lf\n", obj->lastTS);
+}

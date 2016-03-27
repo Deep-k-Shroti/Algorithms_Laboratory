@@ -98,26 +98,6 @@ Implement suitable routines for Insertion, Search and Deletion in RB trees. Writ
 	* time stamps when a process got preempted from CPU,
 	* time stamp when a process completed execution.
 
-8. Simulation Using Heaps <br />
-
-__Assignment Statement__
-You are required to write a program to simulate the collision of some balls on a 2D planar region bounded by straight walls. The simulation is to be done efficiently using the application of the priority queue data structure, which is the objective of this experiment. <br />
-Input and Output Specification <br />
-	* Initialize your simulation with a pre-defined area (length and breadth specification), a set of five particles with initial velocities (as per your convenience) and radius.
-	* The user may provide a time horizon (100 sec say).Your output should be a plot exhibiting the trajectories of the five particles (in different colors) up to 100 sec.
-	* In a seperate text file, you should log the velocity and position vectors of each particle at the moment of each collision.
-
-9. Fibonacci Heaps <br />
-Some common Fibonacci Heap functions have been implemented
-	* Implemented makeHeap()
-	* Implemented insertHeap(H, x)
-	* Implemented extractMinHeap(H)
-	* Implemented unionHeap(H1, H2)
-	* Implemented decreaseKeyHeap(H, x, k)
-	* Reported of amortised costs in the report
-
-Reference: Introduction to Algorithms book by Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, and Clifford Stein
-
 
 ###Known Bugs
 * In Assignment 6 Interval Tree, the function MERGE(T,l,u) is not implemented correctly.
